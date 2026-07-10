@@ -6,17 +6,47 @@ import { createOptOut } from "./optout.js";
 import { store, load } from "./store.js";
 import { hashPassword, verifyPassword, issueToken, requireAuth, requirePro } from "./auth.js";
 
-load();
+await load();
+
+const reviewEmail = process.env.REVIEW_DEMO_EMAIL?.toLowerCase();
+const reviewPassword = process.env.REVIEW_DEMO_PASSWORD;
+if (reviewEmail && reviewPassword) {
+  let reviewUser = store.userByEmail(reviewEmail);
+  if (!reviewUser) {
+    reviewUser = {
+      id: `u_${crypto.randomUUID()}`,
+      email: reviewEmail,
+      passwordHash: hashPassword(reviewPassword),
+      pro: true,
+      proProduct: "app-review-demo",
+      createdAt: new Date().toISOString()
+    };
+    store.addUser(reviewUser);
+  } else {
+    store.updateUser(reviewUser.id, {
+      passwordHash: hashPassword(reviewPassword),
+      pro: true,
+      proProduct: "app-review-demo"
+    });
+  }
+  await store.flush();
+}
+
 const app = express();
 app.use(express.json());
 
 const pro = requirePro(id => store.userById(id));
 
-app.get("/health", (_req, res) => res.json({ ok: true, service: "eraseline-api", version: "0.2.0" }));
+app.get("/health", (_req, res) => res.json({
+  ok: true,
+  service: "eraseline-api",
+  version: "0.3.0",
+  storage: store.mode()
+}));
 
 // ---------- AUTH ----------
 // { email, password } → { token, user }
-app.post("/auth/register", (req, res) => {
+app.post("/auth/register", async (req, res) => {
   const { email, password } = req.body || {};
   if (!email?.includes("@") || (password || "").length < 8) {
     return res.status(400).json({ error: "Validan email i lozinka od min 8 karaktera su obavezni." });
@@ -30,6 +60,7 @@ app.post("/auth/register", (req, res) => {
     createdAt: new Date().toISOString()
   };
   store.addUser(user);
+  await store.flush();
   res.json({ token: issueToken(user.id), user: publicUser(user) });
 });
 
@@ -44,7 +75,7 @@ app.post("/auth/login", (req, res) => {
 
 // Sign in with Apple: klijent šalje Apple identity token; MVP prihvata i pravi/loguje nalog.
 // Produkcija: verifikovati JWT protiv https://appleid.apple.com/auth/keys
-app.post("/auth/apple", (req, res) => {
+app.post("/auth/apple", async (req, res) => {
   const { appleUserId, email } = req.body || {};
   if (!appleUserId) return res.status(400).json({ error: "appleUserId je obavezan" });
   const synthEmail = (email || `${appleUserId}@privaterelay.appleid.com`).toLowerCase();
@@ -52,13 +83,15 @@ app.post("/auth/apple", (req, res) => {
   if (!user) {
     user = { id: `u_${crypto.randomUUID()}`, email: synthEmail, appleUserId, pro: false, createdAt: new Date().toISOString() };
     store.addUser(user);
+    await store.flush();
   }
   res.json({ token: issueToken(user.id), user: publicUser(user) });
 });
 
 // Brisanje naloga i svih podataka (Apple guideline 5.1.1(v) + GDPR)
-app.delete("/auth/me", requireAuth, (req, res) => {
+app.delete("/auth/me", requireAuth, async (req, res) => {
   store.deleteUser(req.userId);
+  await store.flush();
   res.json({ deleted: true });
 });
 
@@ -73,11 +106,12 @@ function publicUser(u) { return { id: u.id, email: u.email, pro: !!u.pro }; }
 // ---------- IAP (StoreKit 2) ----------
 // Klijent šalje potpisanu StoreKit transakciju. MVP: prihvatamo transactionId + productId
 // i markiramo pro. Produkcija: App Store Server API verifikacija (JWS potpis).
-app.post("/iap/verify", requireAuth, (req, res) => {
+app.post("/iap/verify", requireAuth, async (req, res) => {
   const { transactionId, productId } = req.body || {};
   const valid = transactionId && /^eraseline\.pro\.(monthly|yearly)$/.test(productId || "");
   if (!valid) return res.status(400).json({ error: "Nevažeća transakcija" });
   const user = store.updateUser(req.userId, { pro: true, proProduct: productId, proSince: new Date().toISOString() });
+  await store.flush();
   res.json(publicUser(user));
 });
 
@@ -94,6 +128,7 @@ app.post("/scan", requireAuth, async (req, res) => {
     const scan = await runScan(req.body);
     scan.userId = req.userId;
     store.addScan(scan);
+    await store.flush();
     res.json(scan);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -101,39 +136,48 @@ app.post("/scan", requireAuth, async (req, res) => {
 });
 
 app.get("/scan/latest", requireAuth, (req, res) => {
-  const s = store.scans().find(x => x.userId === req.userId) || null;
+  const s = store.latestScan(req.userId);
   if (!s) return res.status(404).json({ error: "Nema skenova još" });
   res.json(s);
 });
 
 // ---------- OPT-OUT (iza paywall-a: requireAuth + pro) ----------
-app.post("/optout", requireAuth, pro, (req, res) => {
+app.post("/optout", requireAuth, pro, async (req, res) => {
   const { brokerId, subject } = req.body || {};
   if (!brokerId || !subject?.first) return res.status(400).json({ error: "brokerId i subject su obavezni" });
   try {
-    res.json(createOptOut({ brokerId, subject }));
+    const optout = createOptOut({ brokerId, subject, userId: req.userId });
+    await store.flush();
+    res.json(optout);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
 });
 
-app.post("/optout/all", requireAuth, pro, (req, res) => {
-  const scan = store.scans().find(x => x.userId === req.userId);
+app.post("/optout/all", requireAuth, pro, async (req, res) => {
+  const scan = store.latestScan(req.userId);
   if (!scan) return res.status(404).json({ error: "Prvo pokreni scan" });
   const targets = scan.results.filter(r => r.status === "exposed" || r.status === "likely_exposed");
-  res.json(targets.map(t => createOptOut({ brokerId: t.brokerId, subject: scan.subject })));
+  const optouts = targets.map(target => createOptOut({
+    brokerId: target.brokerId,
+    subject: scan.subject,
+    userId: req.userId
+  }));
+  await store.flush();
+  res.json(optouts);
 });
 
-app.get("/optout", requireAuth, (_req, res) => res.json(store.optouts()));
+app.get("/optout", requireAuth, (req, res) => res.json(store.optouts(req.userId)));
 
-app.patch("/optout/:id", requireAuth, pro, (req, res) => {
-  const o = store.updateOptOut(req.params.id, { status: req.body.status });
+app.patch("/optout/:id", requireAuth, pro, async (req, res) => {
+  const o = store.updateOptOut(req.params.id, req.userId, { status: req.body.status });
   if (!o) return res.status(404).json({ error: "Nije pronađen" });
+  await store.flush();
   res.json(o);
 });
 
 // ---------- MONITORING ----------
-app.post("/monitor", requireAuth, pro, (req, res) => {
+app.post("/monitor", requireAuth, pro, async (req, res) => {
   const { subject, intervalDays = 7 } = req.body || {};
   if (!subject?.first) return res.status(400).json({ error: "subject je obavezan" });
   const m = {
@@ -143,10 +187,11 @@ app.post("/monitor", requireAuth, pro, (req, res) => {
     nextRunAt: new Date(Date.now() + intervalDays * 864e5).toISOString()
   };
   store.setMonitor(m);
+  await store.flush();
   res.json(m);
 });
 
-app.get("/monitor", requireAuth, (_req, res) => res.json(store.monitors()));
+app.get("/monitor", requireAuth, (req, res) => res.json(store.monitors(req.userId)));
 
 const MONITOR_TICK_MS = 6 * 60 * 60 * 1000;
 setInterval(async () => {
@@ -157,6 +202,7 @@ setInterval(async () => {
       store.addScan(scan);
       m.nextRunAt = new Date(Date.now() + m.intervalDays * 864e5).toISOString();
       store.setMonitor(m);
+      await store.flush();
       // TODO: APNs push ako je score pao
     }
   }

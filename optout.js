@@ -18,13 +18,14 @@ const FORM_STEPS = {
   ussearch: ["Otvori Suppression Center", "Registruj se", "Pronađi zapis", "Zatraži supresiju"]
 };
 
-export function createOptOut({ brokerId, subject }) {
+export function createOptOut({ brokerId, subject, userId }) {
   const broker = getBroker(brokerId);
   if (!broker) throw new Error(`Nepoznat broker: ${brokerId}`);
 
   const id = `oo_${brokerId}_${Date.now()}`;
   const base = {
     id,
+    userId,
     brokerId,
     brokerName: broker.name,
     method: broker.optOut.method,
