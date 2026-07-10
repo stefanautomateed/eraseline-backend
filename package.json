@@ -1,0 +1,15 @@
+{
+  "name": "eraseline-backend",
+  "version": "0.1.0",
+  "description": "Eraseline API — data broker exposure scanning & opt-out automation",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "echo ok"
+  },
+  "dependencies": {
+    "express": "^4.19.0"
+  }
+}
