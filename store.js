@@ -44,5 +44,11 @@ export const store = {
     const u = this.userById(id);
     if (u) { Object.assign(u, patch); save(); }
     return u;
+  },
+  deleteUser(id) {
+    state.users = (state.users || []).filter(u => u.id !== id);
+    state.scans = state.scans.filter(s => s.userId !== id);
+    state.monitors = state.monitors.filter(m => m.userId !== id);
+    save();
   }
 };

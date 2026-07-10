@@ -56,6 +56,12 @@ app.post("/auth/apple", (req, res) => {
   res.json({ token: issueToken(user.id), user: publicUser(user) });
 });
 
+// Brisanje naloga i svih podataka (Apple guideline 5.1.1(v) + GDPR)
+app.delete("/auth/me", requireAuth, (req, res) => {
+  store.deleteUser(req.userId);
+  res.json({ deleted: true });
+});
+
 app.get("/auth/me", requireAuth, (req, res) => {
   const user = store.userById(req.userId);
   if (!user) return res.status(404).json({ error: "Nalog ne postoji" });
