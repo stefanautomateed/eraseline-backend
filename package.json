@@ -1,7 +1,7 @@
 {
   "name": "eraseline-backend",
   "version": "0.1.0",
-  "description": "Eraseline API — data broker exposure scanning & opt-out automation",
+  "description": "Eraseline API \u2014 data broker exposure scanning & opt-out automation",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "express": "^4.19.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "nodemailer": "^6.9.14"
   }
 }

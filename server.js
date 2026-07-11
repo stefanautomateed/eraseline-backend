@@ -5,6 +5,7 @@ import { runScan, computeScore } from "./scanner.js";
 import { createOptOut } from "./optout.js";
 import { store, load } from "./store.js";
 import { hashPassword, verifyPassword, issueToken, requireAuth, requirePro } from "./auth.js";
+import { sendOptOutEmail, mailerEnabled, mailerMode } from "./mailer.js";
 
 await load();
 
@@ -40,9 +41,24 @@ const pro = requirePro(id => store.userById(id));
 app.get("/health", (_req, res) => res.json({
   ok: true,
   service: "eraseline-api",
-  version: "0.3.1",
-  storage: store.mode()
+  version: "0.4.0",
+  storage: store.mode(),
+  mailer: mailerMode()
 }));
+
+// Ako je opt-out "email" tipa i mailer je ukljucen → posalji odmah sa servera
+// i prebaci status na "submitted". U suprotnom ostaje "prepared" (rucni flow u appu).
+async function autoSend(optout, userId) {
+  if (optout.method !== "email" || !mailerEnabled()) return optout;
+  const user = store.userById(userId);
+  const result = await sendOptOutEmail(optout, user?.email);
+  if (!result.sent) return optout;
+  return store.updateOptOut(optout.id, userId, {
+    status: "submitted",
+    sentAt: new Date().toISOString(),
+    sentVia: result.testMode ? "server_email_test" : "server_email"
+  }) || optout;
+}
 
 // ---------- AUTH ----------
 // { email, password } → { token, user }
@@ -146,7 +162,8 @@ app.post("/optout", requireAuth, pro, async (req, res) => {
   const { brokerId, subject } = req.body || {};
   if (!brokerId || !subject?.first) return res.status(400).json({ error: "brokerId and subject are required" });
   try {
-    const optout = createOptOut({ brokerId, subject, userId: req.userId });
+    let optout = createOptOut({ brokerId, subject, userId: req.userId });
+    optout = await autoSend(optout, req.userId);
     await store.flush();
     res.json(optout);
   } catch (e) {
@@ -158,11 +175,15 @@ app.post("/optout/all", requireAuth, pro, async (req, res) => {
   const scan = store.latestScan(req.userId);
   if (!scan) return res.status(404).json({ error: "Run a scan first" });
   const targets = scan.results.filter(r => r.status === "exposed" || r.status === "likely_exposed");
-  const optouts = targets.map(target => createOptOut({
-    brokerId: target.brokerId,
-    subject: scan.subject,
-    userId: req.userId
-  }));
+  const optouts = [];
+  for (const target of targets) {
+    const optout = createOptOut({
+      brokerId: target.brokerId,
+      subject: scan.subject,
+      userId: req.userId
+    });
+    optouts.push(await autoSend(optout, req.userId));
+  }
   await store.flush();
   res.json(optouts);
 });
