@@ -40,7 +40,7 @@ const pro = requirePro(id => store.userById(id));
 app.get("/health", (_req, res) => res.json({
   ok: true,
   service: "eraseline-api",
-  version: "0.3.0",
+  version: "0.3.1",
   storage: store.mode()
 }));
 
@@ -49,9 +49,9 @@ app.get("/health", (_req, res) => res.json({
 app.post("/auth/register", async (req, res) => {
   const { email, password } = req.body || {};
   if (!email?.includes("@") || (password || "").length < 8) {
-    return res.status(400).json({ error: "Validan email i lozinka od min 8 karaktera su obavezni." });
+    return res.status(400).json({ error: "A valid email and a password of at least 8 characters are required." });
   }
-  if (store.userByEmail(email)) return res.status(409).json({ error: "Nalog već postoji — uloguj se." });
+  if (store.userByEmail(email)) return res.status(409).json({ error: "Account already exists — please sign in." });
   const user = {
     id: `u_${crypto.randomUUID()}`,
     email: email.toLowerCase(),
@@ -68,7 +68,7 @@ app.post("/auth/login", (req, res) => {
   const { email, password } = req.body || {};
   const user = email && store.userByEmail(email);
   if (!user || !verifyPassword(password || "", user.passwordHash)) {
-    return res.status(401).json({ error: "Pogrešan email ili lozinka." });
+    return res.status(401).json({ error: "Wrong email or password." });
   }
   res.json({ token: issueToken(user.id), user: publicUser(user) });
 });
@@ -77,7 +77,7 @@ app.post("/auth/login", (req, res) => {
 // Produkcija: verifikovati JWT protiv https://appleid.apple.com/auth/keys
 app.post("/auth/apple", async (req, res) => {
   const { appleUserId, email } = req.body || {};
-  if (!appleUserId) return res.status(400).json({ error: "appleUserId je obavezan" });
+  if (!appleUserId) return res.status(400).json({ error: "appleUserId is required" });
   const synthEmail = (email || `${appleUserId}@privaterelay.appleid.com`).toLowerCase();
   let user = store.userByEmail(synthEmail);
   if (!user) {
@@ -97,7 +97,7 @@ app.delete("/auth/me", requireAuth, async (req, res) => {
 
 app.get("/auth/me", requireAuth, (req, res) => {
   const user = store.userById(req.userId);
-  if (!user) return res.status(404).json({ error: "Nalog ne postoji" });
+  if (!user) return res.status(404).json({ error: "Account not found" });
   res.json(publicUser(user));
 });
 
@@ -109,7 +109,7 @@ function publicUser(u) { return { id: u.id, email: u.email, pro: !!u.pro }; }
 app.post("/iap/verify", requireAuth, async (req, res) => {
   const { transactionId, productId } = req.body || {};
   const valid = transactionId && /^eraseline\.pro\.(monthly|yearly)$/.test(productId || "");
-  if (!valid) return res.status(400).json({ error: "Nevažeća transakcija" });
+  if (!valid) return res.status(400).json({ error: "Invalid transaction" });
   const user = store.updateUser(req.userId, { pro: true, proProduct: productId, proSince: new Date().toISOString() });
   await store.flush();
   res.json(publicUser(user));
@@ -123,7 +123,7 @@ app.get("/brokers", (_req, res) => {
 
 app.post("/scan", requireAuth, async (req, res) => {
   const { first, last } = req.body || {};
-  if (!first || !last) return res.status(400).json({ error: "first i last su obavezni" });
+  if (!first || !last) return res.status(400).json({ error: "first and last are required" });
   try {
     const scan = await runScan(req.body);
     scan.userId = req.userId;
@@ -137,14 +137,14 @@ app.post("/scan", requireAuth, async (req, res) => {
 
 app.get("/scan/latest", requireAuth, (req, res) => {
   const s = store.latestScan(req.userId);
-  if (!s) return res.status(404).json({ error: "Nema skenova još" });
+  if (!s) return res.status(404).json({ error: "No scans yet" });
   res.json(s);
 });
 
 // ---------- OPT-OUT (iza paywall-a: requireAuth + pro) ----------
 app.post("/optout", requireAuth, pro, async (req, res) => {
   const { brokerId, subject } = req.body || {};
-  if (!brokerId || !subject?.first) return res.status(400).json({ error: "brokerId i subject su obavezni" });
+  if (!brokerId || !subject?.first) return res.status(400).json({ error: "brokerId and subject are required" });
   try {
     const optout = createOptOut({ brokerId, subject, userId: req.userId });
     await store.flush();
@@ -156,7 +156,7 @@ app.post("/optout", requireAuth, pro, async (req, res) => {
 
 app.post("/optout/all", requireAuth, pro, async (req, res) => {
   const scan = store.latestScan(req.userId);
-  if (!scan) return res.status(404).json({ error: "Prvo pokreni scan" });
+  if (!scan) return res.status(404).json({ error: "Run a scan first" });
   const targets = scan.results.filter(r => r.status === "exposed" || r.status === "likely_exposed");
   const optouts = targets.map(target => createOptOut({
     brokerId: target.brokerId,
@@ -171,7 +171,7 @@ app.get("/optout", requireAuth, (req, res) => res.json(store.optouts(req.userId)
 
 app.patch("/optout/:id", requireAuth, pro, async (req, res) => {
   const o = store.updateOptOut(req.params.id, req.userId, { status: req.body.status });
-  if (!o) return res.status(404).json({ error: "Nije pronađen" });
+  if (!o) return res.status(404).json({ error: "Not found" });
   await store.flush();
   res.json(o);
 });
@@ -179,7 +179,7 @@ app.patch("/optout/:id", requireAuth, pro, async (req, res) => {
 // ---------- MONITORING ----------
 app.post("/monitor", requireAuth, pro, async (req, res) => {
   const { subject, intervalDays = 7 } = req.body || {};
-  if (!subject?.first) return res.status(400).json({ error: "subject je obavezan" });
+  if (!subject?.first) return res.status(400).json({ error: "subject is required" });
   const m = {
     subjectKey: `${subject.first}|${subject.last}`.toLowerCase(),
     userId: req.userId,

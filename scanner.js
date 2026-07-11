@@ -35,7 +35,7 @@ function heuristic(broker, subject) {
     status: likely ? "likely_exposed" : "unknown",
     confidence: "low",
     url: broker.searchUrl(subject),
-    note: "Broker blokira automatsku proveru — otvori link i potvrdi ručno, ili pošalji opt-out preventivno."
+    note: "This broker blocks automated checks — open the link to verify manually, or send an opt-out preventively."
   };
 }
 

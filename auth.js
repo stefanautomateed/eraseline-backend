@@ -41,7 +41,7 @@ export function verifyToken(token) {
 export function requireAuth(req, res, next) {
   const token = (req.headers.authorization || "").replace(/^Bearer /, "");
   const claims = verifyToken(token);
-  if (!claims) return res.status(401).json({ error: "Neautorizovan — uloguj se." });
+  if (!claims) return res.status(401).json({ error: "Unauthorized — please sign in." });
   req.userId = claims.sub;
   next();
 }
@@ -50,7 +50,7 @@ export function requireAuth(req, res, next) {
 export function requirePro(getUser) {
   return (req, res, next) => {
     const user = getUser(req.userId);
-    if (!user?.pro) return res.status(402).json({ error: "Potrebna je Eraseline Pro pretplata." });
+    if (!user?.pro) return res.status(402).json({ error: "An Eraseline Pro subscription is required." });
     next();
   };
 }

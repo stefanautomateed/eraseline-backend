@@ -7,20 +7,20 @@ import { store } from "./store.js";
 // Faza 2: headless browser automatizacija formi na serveru.
 
 const FORM_STEPS = {
-  truepeoplesearch: ["Otvori link", "Unesi email (može alias)", "Klikni na svoj zapis", "Potvrdi uklanjanje"],
-  fastpeoplesearch: ["Otvori link", "Pronađi svoj zapis", "Klikni 'Remove My Record'", "Potvrdi preko emaila"],
-  spokeo: ["Otvori link", "Nalepi URL svog profila", "Unesi email", "Potvrdi iz inbox-a"],
-  whitepages: ["Otvori link", "Nalepi URL profila", "Izaberi razlog", "Potvrdi telefonskim pozivom (robot)"],
-  beenverified: ["Otvori link", "Pretraži svoje ime", "Klikni 'That's me' → Remove", "Potvrdi email"],
-  radaris: ["Otvori link", "Kreiraj nalog (alias email)", "Zatraži kontrolu nad zapisom", "Obriši podatke"],
-  intelius: ["Otvori Suppression Center", "Registruj se", "Pronađi zapis", "Zatraži supresiju"],
-  peoplefinders: ["Otvori link", "Pronađi svoj zapis", "Unesi email", "Potvrdi"],
-  ussearch: ["Otvori Suppression Center", "Registruj se", "Pronađi zapis", "Zatraži supresiju"]
+  truepeoplesearch: ["Open the link", "Enter your email (an alias works)", "Click your record", "Confirm removal"],
+  fastpeoplesearch: ["Open the link", "Find your record", "Click 'Remove My Record'", "Confirm via email"],
+  spokeo: ["Open the link", "Paste your profile URL", "Enter your email", "Confirm from your inbox"],
+  whitepages: ["Open the link", "Paste your profile URL", "Choose a reason", "Confirm via automated phone call"],
+  beenverified: ["Open the link", "Search your name", "Click 'That's me' → Remove", "Confirm via email"],
+  radaris: ["Open the link", "Create an account (alias email)", "Claim control of your record", "Delete your data"],
+  intelius: ["Open the Suppression Center", "Register", "Find your record", "Request suppression"],
+  peoplefinders: ["Open the link", "Find your record", "Enter your email", "Confirm"],
+  ussearch: ["Open the Suppression Center", "Register", "Find your record", "Request suppression"]
 };
 
 export function createOptOut({ brokerId, subject, userId }) {
   const broker = getBroker(brokerId);
-  if (!broker) throw new Error(`Nepoznat broker: ${brokerId}`);
+  if (!broker) throw new Error(`Unknown broker: ${brokerId}`);
 
   const id = `oo_${brokerId}_${Date.now()}`;
   const base = {
@@ -57,7 +57,7 @@ ${subject.first} ${subject.last}`
   } else {
     payload = {
       url: broker.optOut.url,
-      steps: FORM_STEPS[brokerId] || ["Otvori link", "Prati uputstva brokera"],
+      steps: FORM_STEPS[brokerId] || ["Open the link", "Follow the broker's instructions"],
       listingUrl: broker.searchUrl(subject),
       requiresEmail: broker.optOut.requiresEmail
     };
